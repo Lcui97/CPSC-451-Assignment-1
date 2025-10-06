@@ -4,43 +4,61 @@
 #include <cctype>
 #include <cstring>
 #include <cerrno>
+#include <cstdio>       // std::perror
 
 #include <unistd.h>     // fork, exec*
 #include <sys/types.h>
 #include <sys/wait.h>   // waitpid
 
-
 static const char* PROMPT = "cmd> ";
 
 // -------- helpers --------
 
-// Trim leading/trailing whitespace IN-PLACE and return a view as std::string&
+// Trim leading/trailing whitespace IN-PLACE and return s.
 static std::string& trim(std::string& s) {
-    // TODO:
-    // 1) find first non-space index (std::isspace)
-    // 2) find last non-space index
-    // 3) assign s = s.substr(first, last-first+1) if there are non-space chars
-    // 4) else set s.clear()
-    return s; // TODO: replace with trimmed reference
+    size_t n = s.size();
+    size_t i = 0;
+    while (i < n && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+    if (i == n) { s.clear(); return s; }
+    size_t j = n - 1;
+    while (j > i && std::isspace(static_cast<unsigned char>(s[j]))) --j;
+    s.assign(s, i, j - i + 1);
+    return s;
 }
 
 // Split on ASCII whitespace into tokens (no quotes/escapes).
-// Produces a vector of std::string, and a second vector<char*> for execvp.
-// NOTE: execvp requires argv to be null-terminated; push_back(nullptr) at end.
+// Build both 'words' and an argv buffer for execvp (null-terminated).
 static void tokenize(const std::string& line,
                      std::vector<std::string>& words,
                      std::vector<char*>& argv_buf) {
-    // TODO:
-    // 1) Walk 'line', split on std::isspace.
-    // 2) For each token, push_back into 'words'.
-    // 3) Build argv_buf by taking words[i].data() (C++17: use const_cast<char*> or &words[i][0]).
-    // 4) argv_buf.push_back(nullptr) at the end.
+    words.clear();
+    argv_buf.clear();
+
+    const char* p = line.c_str();
+    const char* end = p + line.size();
+
+    while (p < end) {
+        // skip leading spaces
+        while (p < end && std::isspace(static_cast<unsigned char>(*p))) ++p;
+        if (p >= end) break;
+
+        // find token end
+        const char* q = p;
+        while (q < end && !std::isspace(static_cast<unsigned char>(*q))) ++q;
+
+        words.emplace_back(p, q - p);
+        p = q;
+    }
+
+    // Build argv (null-terminated)
+    argv_buf.reserve(words.size() + 1);
+    for (auto& w : words) {
+        argv_buf.push_back(const_cast<char*>(w.c_str()));
+    }
+    argv_buf.push_back(nullptr);
 }
 
-
 int main() {
-    // TODO (optional): install_parent_signal_handlers();
-
     std::string line;
 
     for (;;) {
@@ -51,7 +69,6 @@ int main() {
         // 2) read line
         if (!std::getline(std::cin, line)) {
             if (std::cin.eof()) {
-                // EOF (Ctrl-D)
                 std::cout << "\n";
                 break;
             } else {
@@ -61,7 +78,7 @@ int main() {
         }
 
         // 3) trim
-        trim(line); // TODO: implement
+        trim(line);
         if (line.empty()) continue;
 
         // 4) built-in exit
@@ -70,7 +87,7 @@ int main() {
         // 5) tokenize -> argv for execvp
         std::vector<std::string> words;
         std::vector<char*> argv;
-        tokenize(line, words, argv);  // TODO: implement
+        tokenize(line, words, argv);
 
         if (words.empty()) continue;  // defensive
 
@@ -78,17 +95,11 @@ int main() {
         pid_t pid = fork();
         if (pid < 0) {
             std::perror("fork");
-            // continue shell loop instead of hard exit
             continue;
         }
 
         if (pid == 0) {
             // ---- child ----
-
-
-            // 7) exec (search PATH)
-            // Prefer execvp for argv[] support. If your assignment demands execlp,
-            // you can call execlp(words[0].c_str(), words[0].c_str(), (char*)nullptr);
             if (execvp(argv[0], argv.data()) == -1) {
                 std::perror(argv[0]);
                 _exit(127);
@@ -100,8 +111,6 @@ int main() {
                 std::perror("waitpid");
                 continue;
             }
-
-        
         }
     }
 
